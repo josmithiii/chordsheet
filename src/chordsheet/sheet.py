@@ -11,13 +11,21 @@ the tool's whole idea of time; `report` prints what they gave):
   the start of the line's last word, the chords go in the last bar and the
   bars before it hold the chord before.
 - A chord line with no lyric under it (and chords after a [Section]: header)
-  is one bar per chord.
+  is one bar per chord; written with bar lines (`| A G | D |`), it is those
+  bars, each bar's chords spread over its beats.
+- A run (`C-Am-Dm7-G`, `Fm-C`) counts as its chords one by one.
 - A lyric line with no chords takes the chords of the same line of the most
   recent earlier section of the same kind ("Verse 4" -> the last "Verse"
   before it). Without one, it is an error, or with `hold` the chord before
   is held through it.
 - A section with no lines at all ("[Bridge]") repeats the most recent section
-  of its kind; "[Solo to Verse]" repeats the most recent Verse.
+  of its kind; "[Solo to Verse]" repeats the most recent Verse. One holding
+  only {notes} repeats too when there is such a section; when there is none
+  ("[Instrumental]", "{Descending cascade, 2 measures}") it has no chords to
+  chart and is left out, with a note.
+- A {chords: Chorus} note in a section makes its chordless lines (or, with
+  no lines, the whole section) take a Chorus's chords instead of their own
+  kind's.
 """
 from __future__ import annotations
 
@@ -38,6 +46,20 @@ def _header(line: str) -> re.Match[str] | None:
     return _HEADER_RE.match(line) or _NAMED_HEADER_RE.match(line)
 _TO_RE = re.compile(r"^(.*?)\s+(?:to|over|on)\s+(.+)$", re.IGNORECASE)
 
+# FORMAT.md: a song starts with "Name: value" header fields; "---" ends one.
+FIELDS = ("Title", "Artist", "Composer", "Lyricist", "Key", "Time", "Tempo", "Capo", "Tuning",
+          "Instrument", "Form", "Source", "Recording", "Copyright", "Note")
+_FIELD_RE = re.compile(rf"^({'|'.join(FIELDS)}):\s*(.*?)\s*$")
+_SONG_END_RE = re.compile(r"^-{3,}\s*$")
+_NOTE_RE = re.compile(r"\s*\{[^}]*\}")
+_NOTE_LINE_RE = re.compile(r"^\s*\{([^}]*)\}\s*$")
+_CHORDS_FROM_RE = re.compile(r"^\s*chords\s*:\s*(.+?)\s*$", re.IGNORECASE)
+_TAB_RE = re.compile(r"^\s*[A-Ga-g]\|")
+# "[Verse 1: Paul McCartney]" is a Verse 1 sung by Paul McCartney.
+_WHO_RE = re.compile(
+    r"^((?:intro|verse|chorus|pre-?chorus|bridge|outro|solo|instrumental|interlude|refrain|tag|coda|segue|ending)"
+    r"(?:\s*\d+)?)\s*:\s*\S.*$", re.IGNORECASE)
+
 
 class SheetError(ValueError):
     pass
@@ -55,6 +77,17 @@ class TextSection:
     name: str
     number: int                 # line number of its header (0 for the part before any header)
     lines: list[TextLine] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)       # {notes} on lines of their own
+
+    @property
+    def chords_from(self) -> str:
+        """A {chords: Chorus} note: the kind of section whose chords this one's
+        chordless lines take, in place of its own kind's."""
+        for n in self.notes:
+            m = _CHORDS_FROM_RE.match(n)
+            if m:
+                return _kind(m.group(1))
+        return ""
 
 
 @dataclass
@@ -63,6 +96,11 @@ class TextSheet:
     subtitle: str
     sections: list[TextSection]
     preamble: int = 0           # lines before the song (a web page's header, chord diagrams), skipped
+    fields: dict[str, list[str]] = field(default_factory=dict)   # FORMAT.md's header, by name
+
+    def value(self, name: str) -> str:
+        """The first value of a header field, or ""."""
+        return self.fields.get(name, [""])[0]
 
 
 def _kind(name: str) -> str:
@@ -73,8 +111,16 @@ def _kind(name: str) -> str:
     return re.sub(r"\s*\d+\s*$", "", name).strip().lower()
 
 
-def read_sheet(text: str) -> TextSheet:
+def read_sheet(text: str, song: int | None = None) -> TextSheet:
+    """A sheet in FORMAT.md's form (it starts with "Title:"), or an older one
+    whose song starts at its first chord line or section header. A file of
+    several songs ("---" between them) needs `song`, counted from 1."""
     raw = text.splitlines()
+    first = next((l for l in raw if l.strip()), "")
+    if first.startswith("Title:"):
+        return _read_formatted(raw, song)
+    if song not in (None, 1):
+        raise SheetError(f"this sheet holds one song, not a song {song}")
     # The song starts at the first chord line or section header. What comes
     # before is not lyrics: the title, a web page's header, chord diagrams.
     start = next((k for k, l in enumerate(raw) if _header(l) or looks_like_chord_line(l)), len(raw))
@@ -88,8 +134,58 @@ def read_sheet(text: str) -> TextSheet:
         parts = re.split(r"\s+-\s+", first, maxsplit=1)
         title = parts[0]
         subtitle = parts[1] if len(parts) > 1 else ""
-    i = start
+    sections = _read_body(raw, start)
+    return TextSheet(title, subtitle, sections, len(preamble))
 
+
+def _read_formatted(raw: list[str], song: int | None) -> TextSheet:
+    starts = [0] + [k + 1 for k, l in enumerate(raw) if _SONG_END_RE.match(l)]
+    ends = [k for k, l in enumerate(raw) if _SONG_END_RE.match(l)] + [len(raw)]
+    songs = list(zip(starts, ends))
+    if song is None and len(songs) > 1:
+        titles = [next((l for l in raw[a:b] if l.startswith("Title:")), "Title: ?")[6:].strip() for a, b in songs]
+        raise SheetError(f"{len(songs)} songs in this file ({'; '.join(f'{k}: {t}' for k, t in enumerate(titles, 1))}); "
+                         f"choose one with --song")
+    k = song or 1
+    if not 1 <= k <= len(songs):
+        raise SheetError(f"there is no song {k}: the file holds {len(songs)}")
+    a, b = songs[k - 1]
+    # Blank out what is not this song, so line numbers stay the file's.
+    lines = [""] * a + raw[a:b] + [""] * (len(raw) - b)
+    i = a
+    while i < b and not lines[i].strip():
+        i += 1
+    fields: dict[str, list[str]] = {}
+    while i < b and lines[i].strip():
+        m = _FIELD_RE.match(lines[i])
+        if not m:
+            raise SheetError(f"line {i + 1}: not a header field ({', '.join(FIELDS)}): {lines[i].strip()!r}")
+        fields.setdefault(m.group(1), []).append(m.group(2))
+        lines[i] = ""
+        i += 1
+    if "Title" not in fields:
+        raise SheetError(f"line {a + 1}: a song's header starts with Title:")
+    # Notes, tabs and chord shapes are for the player, not the chart.
+    in_shapes = False
+    for j in range(i, b):
+        l = lines[j]
+        if _HEADER_RE.match(l):
+            in_shapes = _HEADER_RE.match(l).group(1).strip().lower() == "chord shapes"
+            if in_shapes:
+                lines[j] = ""
+                continue
+        if in_shapes:
+            if not l.strip():
+                in_shapes = False
+            lines[j] = ""
+            continue
+        lines[j] = "" if _TAB_RE.match(l) else l if _NOTE_LINE_RE.match(l) else _NOTE_RE.sub("", l)
+    sections = _read_body(lines, i)
+    return TextSheet(fields["Title"][0], fields.get("Artist", [""])[0], sections, 0, fields)
+
+
+def _read_body(raw: list[str], start: int) -> list[TextSection]:
+    i = start
     sections: list[TextSection] = [TextSection("", 0)]
     previous: Chord | None = None
 
@@ -108,9 +204,16 @@ def read_sheet(text: str) -> TextSheet:
         if not line.strip():
             i += 1
             continue
+        note = _NOTE_LINE_RE.match(line)
+        if note:
+            sections[-1].notes.append(note.group(1).strip())
+            i += 1
+            continue
         h = _header(line)
         if h:
-            sections.append(TextSection(h.group(1).strip(), number))
+            name = h.group(1).strip()
+            who = _WHO_RE.match(name)
+            sections.append(TextSection(who.group(1) if who else name, number))
             rest = h.group(2)
             if rest.strip():
                 if not looks_like_chord_line(rest):
@@ -134,7 +237,7 @@ def read_sheet(text: str) -> TextSheet:
         sections.pop(0)
     if not any(l.chords for s in sections for l in s.lines):
         raise SheetError("no chord lines: nothing to chart")
-    return TextSheet(title, subtitle, sections, len(preamble))
+    return sections
 
 
 # ── Bars
@@ -204,6 +307,17 @@ def _spread(n: int, slots: int) -> list[int]:
 def _line_bars(tl: TextLine, bars_per_line: int, beats: int) -> list[list[Beat]]:
     assert tl.chords is not None
     chords = tl.chords.chords
+    if tl.lyric is None and tl.chords.barred:
+        out: list[list[Beat]] = []
+        for k in range(chords[-1].bar + 1):
+            in_bar = [p.chord for p in chords if p.bar == k]
+            if len(in_bar) > beats:
+                raise SheetError(f"line {tl.number}: {len(in_bar)} chords in one bar of {beats} beats")
+            bar: list[Beat] = [None] * beats
+            for chord, beat in zip(in_bar, _spread(len(in_bar), beats) if in_bar else []):
+                bar[beat] = chord
+            out.append(bar)
+        return out
     if tl.lyric is None:
         return [[p.chord] + [None] * (beats - 1) for p in chords]
     bars: list[list[Beat]] = [[None] * beats for _ in range(bars_per_line)]
@@ -244,8 +358,12 @@ def build_song(sheet: TextSheet, bars_per_line: int = 2, beats_per_bar: int = 4,
 
     for ts in sheet.sections:
         where = f"[{ts.name}] (line {ts.number})" if ts.name else "the lines before any [Section]"
+        if not ts.lines and ts.notes and latest(ts.chords_from or _kind(ts.name)) is None:
+            song.sections.append(Section(ts.name, [], "no chords given"))
+            song.notes.append(f"{ts.name}: no chords in the sheet ({'; '.join(ts.notes)}); left out of the chart")
+            continue
         if not ts.lines:
-            kind = _kind(ts.name)
+            kind = ts.chords_from or _kind(ts.name)
             model = latest(kind)
             if model is None:
                 raise SheetError(f"{where} has no lines, and there is no {kind!r} section before it to repeat")
@@ -259,8 +377,9 @@ def build_song(sheet: TextSheet, bars_per_line: int = 2, beats_per_bar: int = 4,
                 lines.append(Line(_line_bars(tl, bars_per_line, beats_per_bar), tl.lyric or ""))
                 continue
             model = None
+            kind = ts.chords_from or _kind(ts.name)
             for s in reversed(song.sections):
-                if (_kind(s.name) == _kind(ts.name) and idx < len(s.lines)
+                if (_kind(s.name) == kind and idx < len(s.lines)
                         and any(c for b in s.lines[idx].bars for c in b)):
                     model = s
                     break

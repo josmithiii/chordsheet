@@ -34,4 +34,6 @@ The placement rules are specified in `sheet.py`'s module docstring: that docstri
 
 ## Test data
 
-Tests use a made-up song (`SONG` in `tests/test_chordsheet.py`, "Paper Boats"). Real sheets (e.g. under `/l/mus/Lyrics/`) carry copyrighted lyrics: run them through `doit` / the CLI, and write new test cases as invented lyrics in the same style. `out/` is git-ignored.
+Tests use invented songs (`SONG` and `FORMATTED` in `tests/test_chordsheet.py`, "Paper Boats"). Real sheets carry copyrighted lyrics: run them through the CLI from where they live, never copy them into this repo (it is public), and write new test cases as invented lyrics in the same style. `examples/` holds only invented or public-domain sheets; `test_examples` reads every song in it and fails on a held (`***`) guess. `out/` is git-ignored.
+
+The sheet format is `FORMAT.md`; when the reader learns a new feature, the spec and a test change with it.

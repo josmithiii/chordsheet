@@ -1,16 +1,22 @@
 # chordsheet
 
-Turns a chords-over-lyrics text sheet (the kind on guitar-chord sites, e.g.
-`/l/mus/Lyrics/FieldsOfGoldEvaCassidy.txt`) into a MusicXML lead sheet:
-slash notation, chord symbols on their beats, section names, each lyric line
-as text under its first bar. MuseScore lays it out, transposes it and prints
-it; MuseNik opens it with **Edit Score** and makes an iReal Pro chart of it
-(`musenik ireal <file>`, `src/core/IRealChart.cpp` there).
+Turns a chords-over-lyrics text sheet (the kind on guitar-chord sites) into a
+MusicXML lead sheet: slash notation, chord symbols on their beats, section
+names, each lyric line as text under its first bar. MuseScore lays it out,
+transposes it and prints it; MuseNik opens it with **Edit Score** and makes an
+iReal Pro chart of it (`musenik ireal <file>`, `src/core/IRealChart.cpp`
+there).
 
-    uv run chordsheet SHEET.txt -o SONG.musicxml [--pdf] [--composer NAME] [--key "A major"]
+The sheet format is [FORMAT.md](FORMAT.md): the familiar chords-over-lyrics
+layout with a `Title:`/`Key:`/... header, notes in `{braces}`, and `---`
+between songs. [examples/](examples/) has one sheet that uses every feature
+and one public-domain lyric sheet. Sheets copied straight from a web page
+mostly read too (see below).
+
+    uv run chordsheet SHEET.txt -o SONG.musicxml [--song N] [--pdf] [--key "A major"]
     uv run chordsheet --help
     uv run pytest
-    ./doit                      # tests, then Fields of Gold into out/
+    ./doit                      # tests, then examples/paper-boats.txt into out/
 
 It prints the chart it made, bar by bar, and every guess it took (`***` for
 a held line). Check it against the recording: a text sheet has no bar lines.
@@ -26,10 +32,13 @@ the last section of its kind ("Verse 4" from "Verse 3"); an empty `[Bridge]`
 repeats the last Bridge, `[Solo to Verse]` the last Verse. Anything else with
 no chords is an error, or with `--hold` holds the chord before.
 
-Everything before the first chord line or section header is skipped (a web
-page's header, chord diagrams); `Title: X` there names the song. Sections are
-`[Name]` or `Name:` (Intro, Verse 2, Chorus, ...), optionally followed by
-chords on the same line (one bar each).
+A sheet in FORMAT.md's form takes its title, key, time and composer from its
+header (the options override them). A sheet that does not start with
+`Title:` is read as a web page left it: everything before the first chord
+line or section header is skipped (the page's header, chord diagrams), a
+`Title: X` line there names the song, and sections are `[Name]` or `Name:`
+(Intro, Verse 2, Chorus, ...), optionally followed by chords on the same line
+(one bar each).
 
 ## Written for MuseNik's readers
 

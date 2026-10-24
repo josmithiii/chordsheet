@@ -1,0 +1,70 @@
+Title: Paper Boats
+Artist: The Folders
+Composer: A. Nonymous
+Key: Am
+Time: 4/4
+Tempo: 96
+Capo: none
+Form: Intro, V1, C, V2, C, Solo, V3, C, Outro
+Source: invented for chordsheet's examples (FORMAT.md shows every feature)
+Note: the second version below is the same song a fourth higher
+
+[Chord shapes]
+Am7/G = 3x2010
+C/E = 032010
+
+[Intro]
+| Am F | C G |
+C-Am-Dm7-G
+
+[Verse 1: lead]
+       Am                C
+We fold the morning into paper boats
+F        G        C
+And send them down the gutter {softly}
+     Am      Am7/G       F     C/E
+They spin a little, catch the light, and go
+   Dm7 or F     G       C
+Wherever water wants them
+
+[Chorus]
+F           G          Am
+Nothing that we make stays (stays)
+F           G          C    C/E
+All of it is borrowed
+
+[Verse 2: lead and harmony]
+We fold the evening into paper planes
+And throw them at the shutters
+They dip a little, find the wind, and climb
+Wherever air will take them
+
+[Chorus]
+
+[Solo to Verse]
+{Tab}
+e|--0--1--3--1--0-----|
+B|-----------------3--|
+
+[Verse 3]
+{chords: Verse}
+We fold the night into a paper moon
+And hang it on the rafter
+It turns a little when the door is closed
+And no one asks us after
+
+[Chorus]
+
+[Outro]
+{let it ring}
+Am  F  C
+---
+Title: Paper Boats
+Key: Dm
+Note: the same song a fourth higher, for a lower voice
+
+[Verse 1]
+       Dm                F
+We fold the morning into paper boats
+Bb       C        F
+And send them down the gutter

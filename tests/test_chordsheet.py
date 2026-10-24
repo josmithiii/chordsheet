@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
@@ -288,3 +289,148 @@ def test_musenik_ireal_reads_it(tmp_path: Path) -> None:
     assert title == "Paper Boats"
     assert prog.startswith("*A[T44A-, , , |F, , , |C, , , |G, , , ]*B[A-, , , |C, , , |F, ,G, |")
     assert prog.endswith("Z")
+
+
+# ── FORMAT.md: the uniform sheet
+
+FORMATTED = """\
+Title: Paper Boats
+Artist: The Folders
+Composer: A. Nonymous
+Key: Am (probably)
+Time: 3/4
+Source: https://example.com/paper-boats
+Note: an invented song for the tests
+
+[Chord shapes]
+Am7/G = 302010
+C/E = 032010
+
+[Intro]
+| Am F | C G |
+C-Am-Dm7-G
+
+[Verse 1: the Folders]
+       Am                C
+We fold the morning into paper boats {softly}
+F        G        C
+And send them down the gutter (down the gutter)
+
+{Tab}
+e|--3--2--0---|
+B|--------3---|
+
+{Guitar solo over the verse}
+
+[Verse 2]
+We fold the evening into paper planes
+And throw them at the shutters
+---
+Title: Paper Boats
+Key: C
+Note: the same song, a second version
+
+[Verse 1]
+C        G
+We fold the morning
+"""
+
+
+def test_formatted_header_and_body() -> None:
+    sh = read_sheet(FORMATTED, song=1)
+    assert sh.title == "Paper Boats" and sh.subtitle == "The Folders"
+    assert sh.value("Composer") == "A. Nonymous" and sh.value("Key") == "Am (probably)"
+    assert sh.fields["Note"] == ["an invented song for the tests"]
+    assert [s.name for s in sh.sections] == ["Intro", "Verse 1", "Verse 2"]     # no [Chord shapes]; singer dropped
+    lyric = sh.sections[1].lines[0].lyric
+    assert lyric == "We fold the morning into paper boats"                       # the {note} is gone
+    assert sh.sections[1].lines[1].lyric == "And send them down the gutter (down the gutter)"
+    assert len(sh.sections[1].lines) == 2                                         # tab lines skipped
+
+
+def test_bar_lines_and_runs() -> None:
+    s = build_song(read_sheet(FORMATTED, song=1), beats_per_bar=3)
+    b = bars_text(s)
+    assert b[:2] == ["Am F", "C G"]                       # | Am F | C G |
+    assert b[2:6] == ["C", "Am", "Dm7", "G"]              # a run on its own line: a bar each
+    first = s.bars()[0]
+    assert [c.text() if c else None for c in first.beats] == ["Am", "F", None]   # evenly over 3 beats
+
+
+def test_chordless_verse_copies_verse_with_a_singer() -> None:
+    s = build_song(read_sheet(FORMATTED, song=1), beats_per_bar=3)
+    v1, v2 = s.sections[1], s.sections[2]
+    assert [l.bars for l in v2.lines] == [l.bars for l in v1.lines]
+
+
+def test_several_songs_need_a_choice() -> None:
+    with pytest.raises(SheetError, match=r"2 songs in this file \(1: Paper Boats; 2: Paper Boats\); choose one with --song"):
+        read_sheet(FORMATTED)
+    second = read_sheet(FORMATTED, song=2)
+    assert second.value("Key") == "C" and [s.name for s in second.sections] == ["Verse 1"]
+    with pytest.raises(SheetError, match="there is no song 3"):
+        read_sheet(FORMATTED, song=3)
+
+
+def test_bad_header_field_fails() -> None:
+    with pytest.raises(SheetError, match="line 2: not a header field"):
+        read_sheet("Title: X\nAuthor: somebody\n\n[A]\nC\nla\n")
+
+
+def test_cli_uses_the_sheets_key_time_and_composer(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    src = tmp_path / "boats.txt"
+    src.write_text(FORMATTED)
+    out = tmp_path / "boats.musicxml"
+    assert main([str(src), "-o", str(out)]) == 1
+    assert "choose one with --song" in capsys.readouterr().err
+    assert main([str(src), "-o", str(out), "--song", "1"]) == 0
+    printed = capsys.readouterr().out
+    assert "Paper Boats: 14 bars in 3/4, A minor" in printed
+    assert "key A minor, from the sheet's Key: Am (probably)" in printed
+    root = ET.fromstring(out.read_text().split("\n", 2)[2])
+    assert root.findtext("./identification/creator") == "A. Nonymous"
+    assert root.findtext(".//time/beats") == "3"
+
+
+def test_a_section_of_notes_alone_is_not_a_repeat() -> None:
+    text = "Title: T\n\n[Verse]\nC        G\nla la la la\n\n[Instrumental]\n{descending cascade, 2 measures}\n\n[Verse]\n"
+    s = build_song(read_sheet(text))
+    assert [x.name for x in s.sections] == ["Verse", "Instrumental", "Verse"]
+    assert s.sections[1].lines == [] and s.sections[1].how == "no chords given"
+    assert any("Instrumental: no chords in the sheet (descending cascade, 2 measures)" in n for n in s.notes)
+    assert bars_text(s) == ["C", "G", "C", "G"]
+
+
+def test_chords_borrowed_from_another_kind() -> None:
+    text = ("Title: T\n\n[Chorus]\nG       D\nthis land is your land\n\n"
+            "[Verse 1]\n{chords: Chorus}\nas I went walking\n")
+    s = build_song(read_sheet(text))
+    assert bars_text(s) == ["G", "D", "G", "D"]
+    assert s.sections[1].lines[0].how == "from Chorus"
+    with pytest.raises(SheetError, match="no earlier section of the same kind"):
+        build_song(read_sheet(text.replace("{chords: Chorus}\n", "")))
+
+
+def test_a_section_of_notes_alone_repeats_its_kind_when_there_is_one() -> None:
+    text = "Title: T\n\n[Verse]\nC        G\nla la la la\n\n[Solo to Verse]\n{Tab}\ne|--0--|\n"
+    s = build_song(read_sheet(text))
+    assert s.sections[1].how == "repeats Verse"
+    assert bars_text(s) == ["C", "G", "C", "G"]
+
+
+# ── examples/: every song in every example reads, and every chorded one charts with no guess held
+
+EXAMPLES = sorted((Path(__file__).parent.parent / "examples").glob("*.txt"))
+
+
+@pytest.mark.parametrize("path", EXAMPLES, ids=lambda p: p.name)
+def test_examples(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    songs = 1 + sum(1 for l in text.splitlines() if re.fullmatch(r"-{3,}\s*", l))
+    for k in range(1, songs + 1):
+        if not any(looks_like_chord_line(l) for l in text.splitlines()):
+            with pytest.raises(SheetError, match="no chord lines"):
+                read_sheet(text, song=k)
+            continue
+        s = build_song(read_sheet(text, song=k))
+        assert not any(n.startswith("***") for n in s.notes), s.notes
