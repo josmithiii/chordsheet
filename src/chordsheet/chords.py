@@ -77,7 +77,7 @@ def parse_chord(token: str) -> Chord:
 
 
 def is_chord_token(token: str) -> bool:
-    if token in ("or", "|") or _BASS_ONLY_RE.match(token) or _run(token):
+    if token in ("or", "|", "/") or _BASS_ONLY_RE.match(token) or _run(token):
         return True
     m = _CHORD_RE.match(token)
     return bool(m) and m.group(2) in QUALITIES
@@ -102,26 +102,36 @@ class Placed:
     column: int
     chord: Chord
     bar: int = 0                # with bar lines (| A G | D |): which bar, from 0
+    beat: int = -1              # with beat slashes (| E / A / |): which beat of its bar; -1 = none written
 
 
 @dataclass
 class ChordLine:
     chords: list[Placed] = field(default_factory=list)
     barred: bool = False        # written with | bar lines
+    slashed: bool = False       # with / beats inside the bars
 
 
 def parse_chord_line(line: str, previous: Chord | None = None) -> ChordLine:
     """Every token of `line` is a chord, "/X" (the chord before over X), a
     run "C-Am-Dm7-G", "|" (a bar line) or "or" (the next chord is an
     alternative to the one before)."""
-    out = ChordLine(barred="|" in line.split())
+    toks = line.split()
+    out = ChordLine(barred="|" in toks, slashed="|" in toks and "/" in toks)
     pending_or = False
     bar = 0
+    slot = 0                    # beats written so far in this bar (chords and slashes)
     for m in re.finditer(r"\S+", line):
         tok, col = m.group(0), m.start()
         if tok == "|":
-            if out.chords and out.chords[-1].bar == bar:
+            if slot:
                 bar += 1
+                slot = 0
+            continue
+        if tok == "/":
+            if not out.slashed:
+                raise ChordError(f"a beat slash outside bar lines: {line.strip()!r}")
+            slot += 1
             continue
         if tok == "or":
             if not out.chords or pending_or:
@@ -144,7 +154,8 @@ def parse_chord_line(line: str, previous: Chord | None = None) -> ChordLine:
             pending_or = False
             continue
         for k, chord in enumerate(chords):
-            out.chords.append(Placed(col + k, chord, bar))
+            out.chords.append(Placed(col + k, chord, bar, slot if out.slashed else -1))
+            slot += 1
     if pending_or:
         raise ChordError(f"'or' with no chord after it: {line.strip()!r}")
     return out
@@ -152,7 +163,7 @@ def parse_chord_line(line: str, previous: Chord | None = None) -> ChordLine:
 
 def looks_like_chord_line(line: str) -> bool:
     toks = line.split()
-    return bool(toks) and all(is_chord_token(t) for t in toks) and any(t not in ("or", "|") for t in toks)
+    return bool(toks) and all(is_chord_token(t) for t in toks) and any(t not in ("or", "|", "/") for t in toks)
 
 
 # ── Keys

@@ -434,3 +434,10 @@ def test_examples(path: Path) -> None:
             continue
         s = build_song(read_sheet(text, song=k))
         assert not any(n.startswith("***") for n in s.notes), s.notes
+
+
+def test_beat_slashes() -> None:
+    s = build_song(read_sheet("Title: T\n\n[Intro]\n| E / / / | E / A / |\n"))
+    assert [[c.text() if c else None for c in b.beats] for b in s.bars()] == [["E", None, None, None], ["E", None, "A", None]]
+    with pytest.raises(SheetError, match="beat slash outside bar lines"):
+        read_sheet("Title: T\n\n[Intro]\nE / / / A\nla\n")

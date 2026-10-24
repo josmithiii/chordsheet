@@ -73,7 +73,9 @@ per line. Only `Title` is required. A name may repeat (`Source`, `Note`).
 - **Chords over lyrics**: a chord line directly above its lyric line, no
   blank line between; each chord starts over the syllable where it
   changes. A chord line with no lyric under it is instrumental, one bar per
-  chord unless written with bar lines: `| A G | D |`.
+  chord unless written with bar lines: `| A G | D |`. Inside bar lines a
+  `/` is a beat on which the chord before carries on: `| E / / / | E / A / |`
+  is a bar of E, then two beats of E and two of A.
 - **Chords** as written in the source: `F#m7/E`, `Bb11`, `Dmaj7/C#`,
   `C#m7-5`. Minor is `m`, never `-`. `D or Bm7` offers a choice; `/E`
   alone means the chord before, over E. Chords joined by hyphens are a run
@@ -84,7 +86,8 @@ per line. Only `Title` is required. A name may repeat (`Source`, `Note`).
 - **Notes** in braces, never sung: on a line of their own for an event
   (`{Guitar solo: John Lennon}`, `{intro riff x 8}`, `{repeat chorus, fade}`)
   or after a lyric for how it is sung (`{w harmony}`). Words the source
-  marked as unsure go in a note too: `{unclear: ...}`. A section of notes
+  marked as unsure go in a note too: `{unclear: ...}`; another wording for
+  the line above, in a note of its own: `{alt: ...}`. A section of notes
   alone repeats its kind like an empty one (`[Solo to Verse]` then a `{Tab}`);
   with no earlier section of its kind (`[Instrumental]` then
   `{descending cascade, 2 measures}`) it is played but has no chords to chart.

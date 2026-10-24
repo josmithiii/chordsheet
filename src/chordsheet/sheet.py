@@ -12,7 +12,8 @@ the tool's whole idea of time; `report` prints what they gave):
   bars before it hold the chord before.
 - A chord line with no lyric under it (and chords after a [Section]: header)
   is one bar per chord; written with bar lines (`| A G | D |`), it is those
-  bars, each bar's chords spread over its beats.
+  bars, each bar's chords spread over its beats, or, with beat slashes
+  (`| E / A / |`), on the beats where they are written.
 - A run (`C-Am-Dm7-G`, `Fm-C`) counts as its chords one by one.
 - A lyric line with no chords takes the chords of the same line of the most
   recent earlier section of the same kind ("Verse 4" -> the last "Verse"
@@ -310,12 +311,18 @@ def _line_bars(tl: TextLine, bars_per_line: int, beats: int) -> list[list[Beat]]
     if tl.lyric is None and tl.chords.barred:
         out: list[list[Beat]] = []
         for k in range(chords[-1].bar + 1):
-            in_bar = [p.chord for p in chords if p.bar == k]
+            in_bar = [p for p in chords if p.bar == k]
             if len(in_bar) > beats:
                 raise SheetError(f"line {tl.number}: {len(in_bar)} chords in one bar of {beats} beats")
             bar: list[Beat] = [None] * beats
-            for chord, beat in zip(in_bar, _spread(len(in_bar), beats) if in_bar else []):
-                bar[beat] = chord
+            if tl.chords.slashed:
+                for p in in_bar:
+                    if p.beat >= beats:
+                        raise SheetError(f"line {tl.number}: {p.chord.text()} on beat {p.beat + 1} of a {beats}-beat bar")
+                    bar[p.beat] = p.chord
+            else:
+                for p, beat in zip(in_bar, _spread(len(in_bar), beats) if in_bar else []):
+                    bar[beat] = p.chord
             out.append(bar)
         return out
     if tl.lyric is None:
