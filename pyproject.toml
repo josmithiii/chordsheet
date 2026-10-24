@@ -1,0 +1,25 @@
+[project]
+name = "chordsheet"
+version = "0.1.0"
+description = "Chords-over-lyrics text sheets to MusicXML lead sheets (slash notation + chord symbols)"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Julius O. Smith III" }]
+dependencies = []
+
+[project.scripts]
+chordsheet = "chordsheet.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chordsheet"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

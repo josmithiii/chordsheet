@@ -1,0 +1,7 @@
+.venv/
+out/
+__pycache__/
+*.pyc
+.pytest_cache/
+# Session hand-off notes: local working state, not part of the public repo.
+HandoffPrompt.md

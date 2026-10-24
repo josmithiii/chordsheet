@@ -1,0 +1,7 @@
+#!/bin/bash
+# Tests, then Fields of Gold into out/ (add --pdf once MuseScore is 4.1 or later).
+set -euo pipefail
+cd "$(dirname "$0")"
+uv run pytest -q
+mkdir -p out
+uv run chordsheet /l/mus/Lyrics/FieldsOfGoldEvaCassidy.txt -o out/FieldsOfGold.musicxml --composer Sting --hold "$@"
