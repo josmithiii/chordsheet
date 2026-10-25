@@ -14,6 +14,9 @@ and one public-domain lyric sheet. Sheets copied straight from a web page
 mostly read too (see below).
 
     uv run chordsheet SHEET.txt -o SONG.musicxml [--song N] [--pdf] [--key "A major"]
+    uv run chordsheet SHEET.txt --outdir xml/ [--pdf-dir pdf/] [--quiet]   # every song of the sheet
+    uv run chordsheet --list-chorded *.txt     # the FORMAT.md sheets with chords to chart
+    uv run chordsheet --check-mscore           # can MuseScore make the PDFs? (4.1 or later)
     uv run chordsheet --help
     uv run pytest
     ./doit                      # tests, then examples/paper-boats.txt into out/
@@ -23,8 +26,9 @@ a held line). Check it against the recording: a text sheet has no bar lines.
 
 ## How time is decided
 
-The rules are in `src/chordsheet/sheet.py`'s docstring. In short: a lyric
-line is `--bars-per-line` bars (2); its first chord is on the downbeat; the
+The rules are in `src/chordsheet/sheet.py`'s docstring. In short: bar lines
+in a chord line (`|Bm7   Gdim |Dm6  A`) say exactly where its bars are;
+without them, a lyric line is `--bars-per-line` bars (2); its first chord is on the downbeat; the
 chords are spread evenly over the bars, earlier bars taking the extra, and
 evenly over the beats inside a bar; chords that all sit at or after the last
 word go in the last bar. A lyric line without chords copies the same line of
@@ -53,8 +57,21 @@ line or section header is skipped (the page's header, chord diagrams), a
 `tests/test_chordsheet.py::test_musenik_ireal_reads_it` compiles MuseNik's
 `IRealChart.cpp` from `$MO/MuseNik` and runs it on the output.
 
+## A folder of sheets
+
+`--outdir` writes every song of a sheet: `Name.musicxml`, then `Name-2`,
+`Name-3` ... for the other songs of a file of several (a song with no
+chords is reported and skipped). With `--list-chorded` choosing the sheets,
+a Makefile can build a whole folder of them: one rule per sheet (a stamp
+file as its target, since a sheet's first song may have no chords), and a
+list of the sheets that failed at the end.
+
 ## MuseScore
 
-`--pdf` refuses MuseScore older than 4.1. MuseScore 4.0.0 (installed here
+`--pdf` and `--pdf-dir` refuse MuseScore older than 4.1. MuseScore 4.0.0 (installed here
 2026-10-23) prints chord symbols without their roots, and its `-o x.mscx`
-empties the folder it writes into. MuseNik is tested on 4.7.5.
+empties the folder it writes into. MuseNik is tested on 4.7.5. On macOS 26,
+4.7.5 aborts on its way out on most runs ("mutex lock failed", MuseScore
+issue #34445) after writing a good PDF; like MuseNik, chordsheet accepts
+that abort when the PDF was written by the run, and tries anything else once
+more before failing.

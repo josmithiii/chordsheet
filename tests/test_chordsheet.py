@@ -72,7 +72,7 @@ def test_parse_chord() -> None:
 
 def test_unknown_quality_fails() -> None:
     with pytest.raises(ChordError, match="unknown chord quality"):
-        parse_chord("C7#9b13")
+        parse_chord("C7#9#11b13")
 
 
 def test_chord_line_or_and_bass_only() -> None:
@@ -441,3 +441,126 @@ def test_beat_slashes() -> None:
     assert [[c.text() if c else None for c in b.beats] for b in s.bars()] == [["E", None, None, None], ["E", None, "A", None]]
     with pytest.raises(SheetError, match="beat slash outside bar lines"):
         read_sheet("Title: T\n\n[Intro]\nE / / / A\nla\n")
+
+
+# ── a folder of sheets: --list-chorded, --outdir
+
+def test_list_chorded(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "boats.txt").write_text(FORMATTED)
+    (tmp_path / "words.txt").write_text("Title: Words\n\nsome words\nand more\n")
+    (tmp_path / "setlist.txt").write_text("* [A] a song\n* [G] another\n")
+    (tmp_path / "broken.txt").write_text("Title: Broken\n\n[A]\nC  Cq7\nla la\n")
+    files = sorted(str(p) for p in tmp_path.glob("*.txt"))
+    assert main(["--list-chorded", *files]) == 0
+    listed = capsys.readouterr().out.split()
+    # chords to chart, or a fault a build should report; lyrics alone and non-FORMAT files are left out
+    assert [Path(p).name for p in listed] == ["boats.txt", "broken.txt"]
+
+
+def test_outdir_writes_every_song(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    src = tmp_path / "boats.txt"
+    src.write_text(FORMATTED + "---\nTitle: Paper Boats\nNote: words alone\n\nWe fold the morning\n")
+    out = tmp_path / "xml"
+    assert main([str(src), "--outdir", str(out), "--quiet"]) == 0
+    assert sorted(p.name for p in out.iterdir()) == ["boats-2.musicxml", "boats.musicxml"]
+    printed = capsys.readouterr().out
+    assert "song 3: lyrics only, no chords to chart" in printed
+    assert "| Am F |" not in printed                       # --quiet: no chart
+
+
+def test_outdir_reports_a_failing_song_and_goes_on(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    src = tmp_path / "two.txt"
+    src.write_text("Title: One\n\n[A]\nC  Cq7\nla la\n---\nTitle: Two\n\n[A]\nC       G\nla la la la\n")
+    out = tmp_path / "xml"
+    assert main([str(src), "--outdir", str(out)]) == 1
+    assert [p.name for p in out.iterdir()] == ["two-2.musicxml"]
+    assert "*** " + str(src) + " song 1:" in capsys.readouterr().err
+
+
+def test_outdir_option_conflicts(tmp_path: Path) -> None:
+    src = tmp_path / "boats.txt"
+    src.write_text(FORMATTED)
+    with pytest.raises(SystemExit):
+        main([str(src), "--pdf-dir", str(tmp_path)])
+    with pytest.raises(SystemExit):
+        main([str(src), "--outdir", str(tmp_path), "-o", str(tmp_path / "x.musicxml")])
+    with pytest.raises(SystemExit):
+        main([str(src), str(src)])
+
+
+def test_a_chord_line_with_an_unknown_chord_fails_loudly() -> None:
+    for line in ["As7      E", "Ab Eb/             Fm7/Eb", "D   Bm7-5   Fdim(III) Fdim   Dm6"]:
+        with pytest.raises(SheetError, match="line 4: (unknown chord quality|not a chord)"):
+            read_sheet(f"Title: T\n\n[A]\n{line}\nla la la\n")
+    for lyric in ["A Bad Day", "Dead End", "Go Ahead", "Every day"]:
+        assert read_sheet(f"Title: T\n\n[A]\nC\n{lyric}\n").sections[0].lines[0].lyric == lyric
+
+
+def test_check_mscore_refuses_an_old_musescore(tmp_path: Path) -> None:
+    fake = tmp_path / "mscore"
+    fake.write_text("#!/bin/sh\necho 'MuseScore4 4.0.0'\n")
+    fake.chmod(0o755)
+    with pytest.raises(SystemExit, match="MuseScore 4.0.0 .* draws chord symbols without their roots"):
+        main(["--check-mscore", "--mscore", str(fake)])
+    fake.write_text("#!/bin/sh\necho 'MuseScore4 4.7.5'\n")
+    assert main(["--check-mscore", "--mscore", str(fake)]) == 0
+
+
+def _fake_mscore(tmp_path: Path, body: str) -> str:
+    fake = tmp_path / "mscore"
+    fake.write_text("#!/bin/sh\n" + body)
+    fake.chmod(0o755)
+    return str(fake)
+
+
+def test_pdf_abort_after_writing_is_accepted_like_musenik(tmp_path: Path) -> None:
+    from chordsheet.cli import write_pdf
+    xml, pdf = tmp_path / "s.musicxml", tmp_path / "s.pdf"
+    xml.write_text("<score-partwise/>")
+    # MuseScore 4.7.5 on macOS 26: writes the PDF, then aborts with the mutex message.
+    ok = _fake_mscore(tmp_path, 'echo "%PDF" > "$2"; echo "mutex lock failed: Invalid argument" >&2; kill -ABRT $$\n')
+    assert write_pdf(ok, xml, pdf)
+    pdf.unlink()
+    # An abort without that message, or with no PDF, fails (after one more try).
+    other = _fake_mscore(tmp_path, 'echo "%PDF" > "$2"; kill -ABRT $$\n')
+    assert not write_pdf(other, xml, pdf)
+    pdf.unlink()
+    none = _fake_mscore(tmp_path, 'echo "mutex lock failed: Invalid argument" >&2; kill -ABRT $$\n')
+    assert not write_pdf(none, xml, pdf)
+
+
+def test_sus_chords_with_degrees() -> None:
+    c = parse_chord("A7sus4")
+    assert (c.kind, c.degrees) == ("suspended-fourth", ((7, 0, "add"),))
+    assert parse_chord("A7sus").degrees == c.degrees
+    assert parse_chord("Eb9sus").degrees == ((7, 0, "add"), (9, 0, "add"))
+    assert parse_chord("Csus4(#5)").degrees == ((5, 1, "alter"),)
+    assert parse_chord("Csus2(b5)").kind == "suspended-second"
+    xml = to_musicxml(song("[A]\nA7sus4  E\nla la la la\n"), Key("A", False))
+    m = ET.fromstring(xml.split("\n", 2)[2]).find("./part/measure/harmony")
+    assert m.findtext("kind") == "suspended-fourth"
+    assert [(d.findtext("degree-value"), d.findtext("degree-alter"), d.findtext("degree-type")) for d in m.findall("degree")] == [("7", "0", "add")]
+
+
+def test_a_note_under_a_chord_line_is_not_its_lyric() -> None:
+    s = build_song(read_sheet("Title: T\n\n[Intro]\n| E / / / | E / A / |\n{repeat}\n"))
+    assert [[c.text() if c else None for c in b.beats] for b in s.bars()] == [["E", None, None, None], ["E", None, "A", None]]
+    assert s.sections[0].lines[0].lyric == ""
+
+
+def test_altered_dominants() -> None:
+    assert parse_chord("G7b13").degrees == ((13, -1, "add"),)
+    c = parse_chord("C7#9b13")
+    assert (c.kind, c.degrees) == ("dominant", ((9, 1, "add"), (13, -1, "add")))
+
+
+def test_bar_lines_over_a_lyric() -> None:
+    text = ("Title: T\n\n[A]\n"
+            "|       Bm7      Gdim |  Dm6   A    |  B7           A |    Bm  Cdim   A |\n"
+            "It's wonderful, won-der-ful, oh, so wonderful my love\n")
+    s = build_song(read_sheet(text))
+    assert bars_text(s) == ["Bm7 Gdim", "Dm6 A", "B7 A", "Bm Cdim A"]   # four bars, as marked
+    assert s.bars()[0].lyric.startswith("It's wonderful")
+    # Without the bar lines the same 9 chords overflow two bars of 4/4.
+    with pytest.raises(SheetError, match="do not fit"):
+        build_song(read_sheet(text.replace("|", " ")))

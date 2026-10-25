@@ -22,6 +22,17 @@ QUALITIES: dict[str, tuple[str, tuple[tuple[int, int, str], ...]]] = {
     "aug": ("augmented", ()), "+": ("augmented", ()),
     "sus": ("suspended-fourth", ()), "sus4": ("suspended-fourth", ()),
     "sus2": ("suspended-second", ()),
+    # An added degree is measured from a dominant chord (MusicXML), so the 7
+    # added to a sus4 is the minor seventh at alter 0: MuseScore 4.7.5 names
+    # that A7sus4, and alter -1 "Asus4b7" (checked 2026-10-24). An "alter"
+    # degree is measured from the chord's own: 5 at +1 is the sharp fifth.
+    "7sus4": ("suspended-fourth", ((7, 0, "add"),)), "7sus": ("suspended-fourth", ((7, 0, "add"),)),
+    "9sus4": ("suspended-fourth", ((7, 0, "add"), (9, 0, "add"))),
+    "9sus": ("suspended-fourth", ((7, 0, "add"), (9, 0, "add"))),
+    "sus4(#5)": ("suspended-fourth", ((5, 1, "alter"),)),
+    "sus2(b5)": ("suspended-second", ((5, -1, "alter"),)),
+    "7b13": ("dominant", ((13, -1, "add"),)),
+    "7#9b13": ("dominant", ((9, 1, "add"), (13, -1, "add"))),
     "add9": ("major", ((9, 0, "add"),)),
     "5": ("power", ()),
 }
@@ -159,6 +170,24 @@ def parse_chord_line(line: str, previous: Chord | None = None) -> ChordLine:
     if pending_or:
         raise ChordError(f"'or' with no chord after it: {line.strip()!r}")
     return out
+
+
+_CHORDISH_RE = re.compile(r"^[A-G][#b]?\S*$")
+
+
+def looks_like_bad_chord_line(line: str) -> bool:
+    """A chord line with a chord this reader does not know ("As7", "Eb/",
+    "Fdim(III)"): every token starts like a chord and at least half are
+    chords. Read as a lyric, it would hide the mistake; it must fail."""
+    toks = line.split()
+    if not toks or looks_like_chord_line(line):
+        return False
+    marks = ("or", "|", "/")
+    if not all(t in marks or _CHORDISH_RE.match(t) for t in toks):
+        return False
+    chords = [t for t in toks if t not in marks]
+    good = sum(1 for t in chords if is_chord_token(t))
+    return good >= 1 and 2 * good >= len(chords)
 
 
 def looks_like_chord_line(line: str) -> bool:

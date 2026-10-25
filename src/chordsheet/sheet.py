@@ -10,10 +10,12 @@ the tool's whole idea of time; `report` prints what they gave):
   and 3). Columns are used for one thing: when every chord sits at or after
   the start of the line's last word, the chords go in the last bar and the
   bars before it hold the chord before.
-- A chord line with no lyric under it (and chords after a [Section]: header)
-  is one bar per chord; written with bar lines (`| A G | D |`), it is those
+- A chord line with bar lines (`| A G | D |`), over a lyric or not, is those
   bars, each bar's chords spread over its beats, or, with beat slashes
-  (`| E / A / |`), on the beats where they are written.
+  (`| E / A / |`), on the beats where they are written. The rules above
+  and below are for chord lines without bar lines.
+- A chord line with no lyric under it (and chords after a [Section]: header)
+  is one bar per chord.
 - A run (`C-Am-Dm7-G`, `Fm-C`) counts as its chords one by one.
 - A lyric line with no chords takes the chords of the same line of the most
   recent earlier section of the same kind ("Verse 4" -> the last "Verse"
@@ -33,7 +35,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from .chords import Chord, ChordError, ChordLine, looks_like_chord_line, parse_chord_line
+from .chords import Chord, ChordError, ChordLine, looks_like_bad_chord_line, looks_like_chord_line, parse_chord_line
 
 _HEADER_RE = re.compile(r"^\s*\[([^\]]+)\]\s*:?\s*(.*)$")
 # "Verse:", "Chorus 2:", "Intro: D A7 D" - a section name without brackets.
@@ -64,6 +66,18 @@ _WHO_RE = re.compile(
 
 class SheetError(ValueError):
     pass
+
+
+class NoChords(SheetError):
+    """A sheet (or song) with lyrics and no chord lines: nothing to chart."""
+
+
+def song_count(text: str) -> int:
+    """How many songs a sheet holds: "---" separates them in FORMAT.md's form."""
+    first = next((l for l in text.splitlines() if l.strip()), "")
+    if not first.startswith("Title:"):
+        return 1
+    return 1 + sum(1 for l in text.splitlines() if _SONG_END_RE.match(l))
 
 
 @dataclass
@@ -224,20 +238,22 @@ def _read_body(raw: list[str], start: int) -> list[TextSection]:
             continue
         if looks_like_chord_line(line):
             nxt = raw[i + 1].rstrip() if i + 1 < len(raw) else ""
-            if nxt.strip() and not _header(nxt) and not looks_like_chord_line(nxt):
+            if nxt.strip() and not _header(nxt) and not looks_like_chord_line(nxt) and not _NOTE_LINE_RE.match(nxt):
                 sections[-1].lines.append(TextLine(number, chord_line(line, number), nxt.strip()))
                 i += 2
             else:
                 sections[-1].lines.append(TextLine(number, chord_line(line, number), None))
                 i += 1
             continue
+        if looks_like_bad_chord_line(line):
+            chord_line(line, number)            # raises, naming the chord it cannot read
         sections[-1].lines.append(TextLine(number, None, line.strip()))
         i += 1
 
     if not sections[0].lines:
         sections.pop(0)
     if not any(l.chords for s in sections for l in s.lines):
-        raise SheetError("no chord lines: nothing to chart")
+        raise NoChords("no chord lines: nothing to chart")
     return sections
 
 
@@ -308,7 +324,7 @@ def _spread(n: int, slots: int) -> list[int]:
 def _line_bars(tl: TextLine, bars_per_line: int, beats: int) -> list[list[Beat]]:
     assert tl.chords is not None
     chords = tl.chords.chords
-    if tl.lyric is None and tl.chords.barred:
+    if tl.chords.barred:                    # bar lines say where the bars are, over a lyric or not
         out: list[list[Beat]] = []
         for k in range(chords[-1].bar + 1):
             in_bar = [p for p in chords if p.bar == k]

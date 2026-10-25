@@ -73,14 +73,19 @@ per line. Only `Title` is required. A name may repeat (`Source`, `Note`).
 - **Chords over lyrics**: a chord line directly above its lyric line, no
   blank line between; each chord starts over the syllable where it
   changes. A chord line with no lyric under it is instrumental, one bar per
-  chord unless written with bar lines: `| A G | D |`. Inside bar lines a
-  `/` is a beat on which the chord before carries on: `| E / / / | E / A / |`
-  is a bar of E, then two beats of E and two of A.
+  chord. Without bar lines, a lyric line is two bars (chordsheet's
+  `--bars-per-line`). **Bar lines** say exactly where the bars are, on any
+  chord line: `| A G | D |` alone, or added to a chord line over its lyric
+  so each chord still sits over its syllable (`|Bm7      Gdim  |Dm6   A`).
+  Inside bar lines a `/` is a beat on which the chord before carries on:
+  `| E / / / | E / A / |` is a bar of E, then two beats of E and two of A.
 - **Chords** as written in the source: `F#m7/E`, `Bb11`, `Dmaj7/C#`,
   `C#m7-5`. Minor is `m`, never `-`. `D or Bm7` offers a choice; `/E`
   alone means the chord before, over E. Chords joined by hyphens are a run
   played in quick succession, timing not given: `C-Am-Dm7-G` on a line of
-  its own, `Fm-C` over one syllable.
+  its own, `Fm-C` over one syllable. A chord line with a chord the reader
+  does not know (`As7`, `Eb/`) stops it with that chord's line, rather than
+  being read as words.
 - **Lyrics** exactly as the source has them. Parentheses in a lyric line
   are sung, usually by backing voices: `You won't see me (you won't see me)`.
 - **Notes** in braces, never sung: on a line of their own for an event
